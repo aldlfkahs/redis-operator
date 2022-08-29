@@ -24,9 +24,11 @@ import (
 // RedisClusterSpec defines the desired state of RedisCluster
 type RedisClusterSpec struct {
 	// +kubebuilder:validation:Minimum=3
-	Size              *int32                       `json:"clusterSize"`
-	KubernetesConfig  KubernetesConfig             `json:"kubernetesConfig"`
-	RedisLeader       RedisLeader                  `json:"redisLeader,omitempty"`
+	Size             *int32           `json:"clusterSize"`
+	KubernetesConfig KubernetesConfig `json:"kubernetesConfig"`
+	// +kubebuilder:default:={livenessProbe:{initialDelaySeconds: 1, timeoutSeconds: 1, periodSeconds: 10, successThreshold: 1, failureThreshold:3}, readinessProbe:{initialDelaySeconds: 1, timeoutSeconds: 1, periodSeconds: 10, successThreshold: 1, failureThreshold:3}}
+	RedisLeader RedisLeader `json:"redisLeader,omitempty"`
+	// +kubebuilder:default:={livenessProbe:{initialDelaySeconds: 1, timeoutSeconds: 1, periodSeconds: 10, successThreshold: 1, failureThreshold:3}, readinessProbe:{initialDelaySeconds: 1, timeoutSeconds: 1, periodSeconds: 10, successThreshold: 1, failureThreshold:3}}
 	RedisFollower     RedisFollower                `json:"redisFollower,omitempty"`
 	RedisExporter     *RedisExporter               `json:"redisExporter,omitempty"`
 	Storage           *Storage                     `json:"storage,omitempty"`
@@ -35,6 +37,8 @@ type RedisClusterSpec struct {
 	PriorityClassName string                       `json:"priorityClassName,omitempty"`
 	Tolerations       *[]corev1.Toleration         `json:"tolerations,omitempty"`
 	Resources         *corev1.ResourceRequirements `json:"resources,omitempty"`
+	TLS               *TLSConfig                   `json:"TLS,omitempty"`
+	Sidecars          *[]Sidecar                   `json:"sidecars,omitempty"`
 }
 
 func (cr *RedisClusterSpec) GetReplicaCounts(t string) int32 {
@@ -50,21 +54,34 @@ func (cr *RedisClusterSpec) GetReplicaCounts(t string) int32 {
 // RedisLeader interface will have the redis leader configuration
 type RedisLeader struct {
 	// +kubebuilder:validation:Minimum=3
-	Replicas    *int32           `json:"replicas,omitempty"`
-	RedisConfig *RedisConfig     `json:"redisConfig,omitempty"`
-	Affinity    *corev1.Affinity `json:"affinity,omitempty"`
+	Replicas            *int32                    `json:"replicas,omitempty"`
+	RedisConfig         *RedisConfig              `json:"redisConfig,omitempty"`
+	Affinity            *corev1.Affinity          `json:"affinity,omitempty"`
+	PodDisruptionBudget *RedisPodDisruptionBudget `json:"pdb,omitempty"`
+	ReadinessProbe      *Probe                    `json:"readinessProbe,omitempty" protobuf:"bytes,11,opt,name=readinessProbe"`
+	LivenessProbe       *Probe                    `json:"livenessProbe,omitempty" protobuf:"bytes,11,opt,name=livenessProbe"`
 }
 
 // RedisFollower interface will have the redis follower configuration
 type RedisFollower struct {
-	Replicas    *int32           `json:"replicas,omitempty"`
-	RedisConfig *RedisConfig     `json:"redisConfig,omitempty"`
-	Affinity    *corev1.Affinity `json:"affinity,omitempty"`
+	// +kubebuilder:validation:Minimum=3
+	Replicas            *int32                    `json:"replicas,omitempty"`
+	RedisConfig         *RedisConfig              `json:"redisConfig,omitempty"`
+	Affinity            *corev1.Affinity          `json:"affinity,omitempty"`
+	PodDisruptionBudget *RedisPodDisruptionBudget `json:"pdb,omitempty"`
+	ReadinessProbe      *Probe                    `json:"readinessProbe,omitempty" protobuf:"bytes,11,opt,name=readinessProbe"`
+	LivenessProbe       *Probe                    `json:"livenessProbe,omitempty" protobuf:"bytes,11,opt,name=livenessProbe"`
 }
 
 // RedisClusterStatus defines the observed state of RedisCluster
 type RedisClusterStatus struct {
-	RedisCluster RedisCluster `json:"redisCluster,omitempty"`
+}
+
+// RedisPodDisruptionBudget configure a PodDisruptionBudget on the resource (leader/follower)
+type RedisPodDisruptionBudget struct {
+	Enabled        bool   `json:"enabled,omitempty"`
+	MinAvailable   *int32 `json:"minAvailable,omitempty"`
+	MaxUnavailable *int32 `json:"maxUnavailable,omitempty"`
 }
 
 //+kubebuilder:object:root=true
@@ -73,14 +90,13 @@ type RedisClusterStatus struct {
 // +kubebuilder:printcolumn:name="LeaderReplicas",type=integer,JSONPath=`.spec.redisLeader.replicas`,description=Overridden Leader replica count
 // +kubebuilder:printcolumn:name="FollowerReplicas",type=integer,JSONPath=`.spec.redisFollower.replicas`,description=Overridden Follower replica count
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`,description=Age of Cluster
-
 // RedisCluster is the Schema for the redisclusters API
 type RedisCluster struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	Spec   RedisClusterSpec `json:"spec"`
-	Status RedisClusterSpec `json:"status,omitempty"`
+	Spec   RedisClusterSpec   `json:"spec"`
+	Status RedisClusterStatus `json:"status,omitempty"`
 }
 
 //+kubebuilder:object:root=true

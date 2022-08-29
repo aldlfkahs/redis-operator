@@ -28,7 +28,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	redisv1beta1 "redis-operator/api/v1beta1"
 )
@@ -53,6 +52,11 @@ func (r *RedisClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		}
 		return ctrl.Result{}, err
 	}
+
+	leaderReplicas := instance.Spec.GetReplicaCounts("leader")
+	followerReplicas := instance.Spec.GetReplicaCounts("follower")
+	totalReplicas := leaderReplicas + followerReplicas
+
 	if err := k8sutils.HandleRedisClusterFinalizer(instance, r.Client); err != nil {
 		return ctrl.Result{}, err
 	}
@@ -61,62 +65,64 @@ func (r *RedisClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		return ctrl.Result{}, err
 	}
 
-	if err := controllerutil.SetControllerReference(instance, instance, r.Scheme); err != nil {
-		return ctrl.Result{}, err
-	}
 	err = k8sutils.CreateRedisLeader(instance)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
-	err = k8sutils.CreateRedisLeaderService(instance)
+	if leaderReplicas != 0 {
+		err = k8sutils.CreateRedisLeaderService(instance)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+	}
+
+	err = k8sutils.ReconcileRedisPodDisruptionBudget(instance, "leader", instance.Spec.RedisLeader.PodDisruptionBudget)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
+
 	err = k8sutils.CreateRedisFollower(instance)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
-	err = k8sutils.CreateRedisFollowerService(instance)
+	// if we have followers create their service.
+	if followerReplicas != 0 {
+		err = k8sutils.CreateRedisFollowerService(instance)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+	}
+	err = k8sutils.ReconcileRedisPodDisruptionBudget(instance, "follower", instance.Spec.RedisFollower.PodDisruptionBudget)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
 
-	redisLeaderInfo, err := k8sutils.GetStateFulSet(instance.Namespace, instance.ObjectMeta.Name+"-leader")
+	redisLeaderInfo, err := k8sutils.GetStatefulSet(instance.Namespace, instance.ObjectMeta.Name+"-leader")
 	if err != nil {
 		return ctrl.Result{}, err
 	}
-	redisFollowerInfo, err := k8sutils.GetStateFulSet(instance.Namespace, instance.ObjectMeta.Name+"-follower")
+	redisFollowerInfo, err := k8sutils.GetStatefulSet(instance.Namespace, instance.ObjectMeta.Name+"-follower")
 	if err != nil {
 		return ctrl.Result{}, err
 	}
 
-	leaderReplicas := instance.Spec.RedisLeader.Replicas
-	if leaderReplicas == nil {
-		leaderReplicas = instance.Spec.Size
-	}
-	followerReplicas := instance.Spec.RedisFollower.Replicas
-	if followerReplicas == nil {
-		followerReplicas = instance.Spec.Size
-	}
-	totalReplicas := int(*leaderReplicas) + int(*followerReplicas)
-
-	if *leaderReplicas == 0 {
-		reqLogger.Info("Redis leaders Cannot be 0", "Ready.Replicas", strconv.Itoa(int(redisLeaderInfo.Status.ReadyReplicas)), "Expected.Replicas", instance.Spec.Size)
+	if leaderReplicas == 0 {
+		reqLogger.Info("Redis leaders Cannot be 0", "Ready.Replicas", strconv.Itoa(int(redisLeaderInfo.Status.ReadyReplicas)), "Expected.Replicas", leaderReplicas)
 		return ctrl.Result{RequeueAfter: time.Second * 120}, nil
 	}
 
-	if int(redisLeaderInfo.Status.ReadyReplicas) != int(*leaderReplicas) && int(redisFollowerInfo.Status.ReadyReplicas) != int(*followerReplicas) {
-		reqLogger.Info("Redis leader and follower nodes are not ready yet", "Ready.Replicas", strconv.Itoa(int(redisLeaderInfo.Status.ReadyReplicas)), "Expected.Replicas", instance.Spec.Size)
+	if int32(redisLeaderInfo.Status.ReadyReplicas) != leaderReplicas && int32(redisFollowerInfo.Status.ReadyReplicas) != followerReplicas {
+		reqLogger.Info("Redis leader and follower nodes are not ready yet", "Ready.Replicas", strconv.Itoa(int(redisLeaderInfo.Status.ReadyReplicas)), "Expected.Replicas", leaderReplicas)
 		return ctrl.Result{RequeueAfter: time.Second * 120}, nil
 	}
 	reqLogger.Info("Creating redis cluster by executing cluster creation commands", "Leaders.Ready", strconv.Itoa(int(redisLeaderInfo.Status.ReadyReplicas)), "Followers.Ready", strconv.Itoa(int(redisFollowerInfo.Status.ReadyReplicas)))
-	if k8sutils.CheckRedisNodeCount(instance, "") != int(totalReplicas) {
+	if k8sutils.CheckRedisNodeCount(instance, "") != totalReplicas {
 		leaderCount := k8sutils.CheckRedisNodeCount(instance, "leader")
-		if leaderCount != int(*leaderReplicas) {
+		if leaderCount != leaderReplicas {
 			reqLogger.Info("Not all leader are part of the cluster...", "Leaders.Count", leaderCount, "Instance.Size", leaderReplicas)
 			k8sutils.ExecuteRedisClusterCommand(instance)
 		} else {
-			if *followerReplicas > 0 {
+			if followerReplicas > 0 {
 				reqLogger.Info("All leader are part of the cluster, adding follower/replicas", "Leaders.Count", leaderCount, "Instance.Size", leaderReplicas, "Follower.Replicas", followerReplicas)
 				k8sutils.ExecuteRedisReplicationCommand(instance)
 			} else {
@@ -127,7 +133,10 @@ func (r *RedisClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		reqLogger.Info("Redis leader count is desired")
 		if k8sutils.CheckRedisClusterState(instance) >= int(totalReplicas)-1 {
 			reqLogger.Info("Redis leader is not desired, executing failover operation")
-			k8sutils.ExecuteFailoverOperation(instance)
+			err = k8sutils.ExecuteFailoverOperation(instance)
+			if err != nil {
+				return ctrl.Result{RequeueAfter: time.Second * 10}, err
+			}
 		}
 		return ctrl.Result{RequeueAfter: time.Second * 120}, nil
 	}
