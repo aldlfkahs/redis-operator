@@ -4,7 +4,7 @@ metadata:
   labels:
     control-plane: redis-operator
   name: redis-operator-metrics-service
-  namespace: ot-operators
+  namespace: redis-operator
 spec:
   ports:
   - name: https
