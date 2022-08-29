@@ -17,12 +17,16 @@ spec:
   scope: Namespaced
   versions:
   - additionalPrinterColumns:
-    - description: Leader replica count
+    - description: Current cluster node count
       jsonPath: .spec.clusterSize
+      name: ClusterSize
+      type: integer
+    - description: Overridden Leader replica count
+      jsonPath: .spec.redisLeader.replicas
       name: LeaderReplicas
       type: integer
-    - description: Follower replica count
-      jsonPath: .spec.clusterSize
+    - description: Overridden Follower replica count
+      jsonPath: .spec.redisFollower.replicas
       name: FollowerReplicas
       type: integer
     - description: Age of Cluster
