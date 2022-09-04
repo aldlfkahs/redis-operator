@@ -14,6 +14,12 @@ func CreateStandaloneService(cr *redisv1beta1.Redis) error {
 	labels := getRedisLabels(cr.ObjectMeta.Name, "standalone", "standalone", cr.ObjectMeta.Labels)
 	annotations := generateServiceAnots(cr.ObjectMeta)
 	if cr.Spec.RedisExporter != nil && cr.Spec.RedisExporter.Enabled {
+		if err := createServiceMonitor(cr.Namespace, cr.Annotations["creator"], cr.Name, false); err != nil {
+			logger.Error(err, "Failed to create ServiceMonitor")
+		}
+		if err := createGrafanaDashBoard(cr.Namespace, cr.Annotations["creator"], cr.Name, false); err != nil {
+			logger.Error(err, "Failed to create GrafanaDashboard")
+		}
 		enableMetrics = true
 	}
 	objectMetaInfo := generateObjectMetaInformation(cr.ObjectMeta.Name, cr.Namespace, labels, annotations)
