@@ -2,6 +2,7 @@ package k8sutils
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/go-logr/logr"
 	prometheusv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
@@ -35,7 +36,6 @@ func createGrafanaDashBoard(namespace, userName, redisName string, isCluster boo
 }
 
 func createServiceMonitor(namespace, userName, redisName string, isCluster bool) error {
-
 	logger := dashboardLogger(namespace, redisName)
 
 	if isCluster {
@@ -143,46 +143,42 @@ func generateServiceMontiorObject(namespace, userName, redisName string, isClust
 	return sm
 }
 
-func deleteGrafanaDashBoard(namespace, redisName string, isCluster bool) error {
-	logger := dashboardLogger(namespace, redisName)
-
+func getGrafanaDashboard(namespace, redisName string, isCluster bool) (grafanav1alpha1.GrafanaDashboard, error) {
+	var dsb grafanav1alpha1.GrafanaDashboard
 	if isCluster {
-		if _, err := generateK8sClient().RESTClient().Delete().AbsPath("/apis/monitoring.coreos.com/v1/servicemonitors").Namespace(namespace).Name(redisName + "-cluster").DoRaw(context.TODO()); err != nil {
-			logger.Error(err, "Failed to delete GrafanaDahsboard")
-			return err
-		}
+		redisName += "-cluster"
 	} else {
-		if _, err := generateK8sClient().RESTClient().Delete().AbsPath("/apis/monitoring.coreos.com/v1/servicemonitors").Namespace(namespace).Name(redisName + "-standalone").DoRaw(context.TODO()); err != nil {
-			logger.Error(err, "Failed to delete GrafanaDahsboard")
-			return err
-		}
+		redisName += "-standalone"
 	}
 
-	logger.Info("Delete GrafanaDashboard Success")
+	data, err := generateK8sClient().RESTClient().Get().AbsPath("/apis/integreatly.org/v1alpha1/grafanadashboards").Namespace(namespace).Name(redisName).DoRaw(context.TODO())
+	if err != nil {
+		return dsb, err
+	}
 
-	return nil
+	if err = json.Unmarshal(data, &dsb); err != nil {
+		return dsb, err
+	}
+
+	return dsb, err
 }
 
-func deleteServiceMonitor(namespace, redisName string, isCluster bool) error {
-	logger := dashboardLogger(namespace, redisName)
-
+func getServiceMonitor(namespace, redisName string, isCluster bool, role string) (prometheusv1.ServiceMonitor, error) {
+	var sm prometheusv1.ServiceMonitor
 	if isCluster {
-		if _, err := generateK8sClient().RESTClient().Delete().AbsPath("/apis/monitoring.coreos.com/v1/servicemonitors").Namespace(namespace).Name(redisName + "-leader").DoRaw(context.TODO()); err != nil {
-			logger.Error(err, "Failed to delete ServiceMonitor")
-			return err
-		}
-		if _, err := generateK8sClient().RESTClient().Delete().AbsPath("/apis/monitoring.coreos.com/v1/servicemonitors").Namespace(namespace).Name(redisName + "-follower").DoRaw(context.TODO()); err != nil {
-			logger.Error(err, "Failed to delete ServiceMonitor")
-			return err
-		}
+		redisName += "-" + role
 	} else {
-		if _, err := generateK8sClient().RESTClient().Delete().AbsPath("/apis/monitoring.coreos.com/v1/servicemonitors").Namespace(namespace).Name(redisName).DoRaw(context.TODO()); err != nil {
-			logger.Error(err, "Failed to delete ServiceMonitor")
-			return err
-		}
+		redisName += "-standalone"
 	}
 
-	logger.Info("Delete ServiceMonitor Success")
+	data, err := generateK8sClient().RESTClient().Get().AbsPath("/apis/monitoring.coreos.com/v1/servicemonitors").Namespace(namespace).Name(redisName).DoRaw(context.TODO())
+	if err != nil {
+		return sm, err
+	}
 
-	return nil
+	if err = json.Unmarshal(data, &sm); err != nil {
+		return sm, err
+	}
+
+	return sm, err
 }
