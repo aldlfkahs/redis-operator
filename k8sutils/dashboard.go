@@ -8,6 +8,7 @@ import (
 	prometheusv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 
 	grafanav1alpha1 "github.com/grafana-operator/grafana-operator/v4/api/integreatly/v1alpha1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -16,10 +17,12 @@ func dashboardLogger(namespace, name string) logr.Logger {
 	return reqLogger
 }
 
-func createGrafanaDashBoard(namespace, userName, redisName string, isCluster bool) error {
+func CreateGrafanaDashBoard(namespace, userName, redisName string, isCluster bool) error {
 	logger := dashboardLogger(namespace, redisName)
 
 	var dsb grafanav1alpha1.GrafanaDashboard
+	var body []byte
+	var err error
 
 	if isCluster {
 		dsb = generateGrafanaDashboard(namespace, userName, redisName, true)
@@ -27,38 +30,86 @@ func createGrafanaDashBoard(namespace, userName, redisName string, isCluster boo
 		dsb = generateGrafanaDashboard(namespace, userName, redisName, false)
 	}
 
-	if _, err := generateK8sClient().RESTClient().Post().AbsPath("/apis/integreatly.org/v1alpha1/grafanadashboards").Body(&dsb).DoRaw(context.TODO()); err != nil {
-		logger.Error(err, "Failed to create GrafanaDashboard")
+	body, err = json.Marshal(dsb)
+	if err != nil {
+		return err
 	}
 
-	logger.Info("Create GrafanaDashboard Success")
+	if isCluster {
+		_, err = getGrafanaDashboard(namespace, redisName, true)
+		if err != nil && !errors.IsNotFound(err) {
+			return err
+		} else if errors.IsNotFound(err) {
+			if _, err := generateK8sClient().RESTClient().Post().AbsPath("/apis/integreatly.org/v1alpha1/namespaces/" + namespace + "/grafanadashboards").Body(body).DoRaw(context.TODO()); err != nil {
+				logger.Error(err, "Failed to create GrafanaDashboard")
+				return err
+			}
+			logger.Info("Create GrafanaDashboard Success")
+		}
+	} else {
+		_, err = getGrafanaDashboard(namespace, redisName, false)
+		if err != nil && !errors.IsNotFound(err) {
+			return err
+		} else if errors.IsNotFound(err) {
+			if _, err := generateK8sClient().RESTClient().Post().AbsPath("/apis/integreatly.org/v1alpha1/namespaces/" + namespace + "/grafanadashboards").Body(body).DoRaw(context.TODO()); err != nil {
+				logger.Error(err, "Failed to create GrafanaDashboard")
+				return err
+			}
+			logger.Info("Create GrafanaDashboard Success")
+
+		}
+	}
+	logger.Info("GrafanaDashboard is in-sync")
 	return nil
 }
 
-func createServiceMonitor(namespace, userName, redisName string, isCluster bool) error {
+func CreateServiceMonitor(namespace, userName, redisName string, isCluster bool) error {
 	logger := dashboardLogger(namespace, redisName)
+	var body []byte
+	var err error
 
 	if isCluster {
-		sm_leader := generateServiceMontiorObject(namespace, userName, redisName, true, "leader")
-		if _, err := generateK8sClient().RESTClient().Post().AbsPath("/apis/monitoring.coreos.com/v1/servicemonitors").Body(&sm_leader).DoRaw(context.TODO()); err != nil {
-			logger.Error(err, "Failed to create ServiceMonitor")
+		_, err = getServiceMonitor(namespace, redisName, true, "leader")
+		if err != nil && !errors.IsNotFound(err) {
 			return err
+		} else if errors.IsNotFound(err) {
+			sm_leader := generateServiceMontiorObject(namespace, userName, redisName, true, "leader")
+			body, _ = json.Marshal(sm_leader)
+			if _, err := generateK8sClient().RESTClient().Post().AbsPath("/apis/monitoring.coreos.com/v1/namespaces/" + namespace + "/servicemonitors").Body(body).DoRaw(context.TODO()); err != nil {
+				logger.Error(err, "Failed to create ServiceMonitor")
+				return err
+			}
+			logger.Info("Create ServiceMonitor for leader Success")
 		}
-		sm_follower := generateServiceMontiorObject(namespace, userName, redisName, true, "follower")
-		if _, err := generateK8sClient().RESTClient().Post().AbsPath("/apis/monitoring.coreos.com/v1/servicemonitors").Body(&sm_follower).DoRaw(context.TODO()); err != nil {
-			logger.Error(err, "Failed to create ServiceMonitor")
+
+		_, err = getServiceMonitor(namespace, redisName, true, "follower")
+		if err != nil && !errors.IsNotFound(err) {
 			return err
+		} else if errors.IsNotFound(err) {
+			sm_follower := generateServiceMontiorObject(namespace, userName, redisName, true, "follower")
+			body, _ = json.Marshal(sm_follower)
+			if _, err := generateK8sClient().RESTClient().Post().AbsPath("/apis/monitoring.coreos.com/v1/namespaces/" + namespace + "/servicemonitors").Body(body).DoRaw(context.TODO()); err != nil {
+				logger.Error(err, "Failed to create ServiceMonitor")
+				return err
+			}
+			logger.Info("Create ServiceMonitor for follower Success")
 		}
 	} else {
-		sm := generateServiceMontiorObject(namespace, userName, redisName, false, "")
-		if _, err := generateK8sClient().RESTClient().Post().AbsPath("/apis/monitoring.coreos.com/v1/servicemonitors").Body(&sm).DoRaw(context.TODO()); err != nil {
-			logger.Error(err, "Failed to create ServiceMonitor")
+		_, err = getServiceMonitor(namespace, redisName, false, "")
+		if err != nil && !errors.IsNotFound(err) {
 			return err
+		} else if errors.IsNotFound(err) {
+			sm := generateServiceMontiorObject(namespace, userName, redisName, false, "")
+			body, _ = json.Marshal(sm)
+			if _, err = generateK8sClient().RESTClient().Post().AbsPath("/apis/monitoring.coreos.com/v1/namespaces/" + namespace + "/servicemonitors").Body(body).DoRaw(context.TODO()); err != nil {
+				logger.Error(err, "Failed to create ServiceMonitor")
+				return err
+			}
+			logger.Info("Create ServiceMonitor Success")
 		}
 	}
 
-	logger.Info("Create ServiceMonitor Success")
-
+	logger.Info("ServiceMonitor is in-sync")
 	return nil
 }
 
@@ -71,6 +122,10 @@ func generateGrafanaDashboard(namespace, userName, redisName string, isCluster b
 	}
 
 	dsb := grafanav1alpha1.GrafanaDashboard{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: "integreatly.org/v1alpha1",
+			Kind:       "GrafanaDashboard",
+		},
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: namespace,
 			Name:      name,
@@ -107,6 +162,10 @@ func generateServiceMontiorObject(namespace, userName, redisName string, isClust
 	}
 
 	sm := prometheusv1.ServiceMonitor{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: "monitoring.coreos.com/v1",
+			Kind:       "ServiceMonitor",
+		},
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: namespace,
 			Name:      redisName,
@@ -151,7 +210,7 @@ func getGrafanaDashboard(namespace, redisName string, isCluster bool) (grafanav1
 		redisName += "-standalone"
 	}
 
-	data, err := generateK8sClient().RESTClient().Get().AbsPath("/apis/integreatly.org/v1alpha1/grafanadashboards").Namespace(namespace).Name(redisName).DoRaw(context.TODO())
+	data, err := generateK8sClient().RESTClient().Get().AbsPath("/apis/integreatly.org/v1alpha1/namespaces/" + namespace + "/grafanadashboards").Name(redisName).DoRaw(context.TODO())
 	if err != nil {
 		return dsb, err
 	}
@@ -160,7 +219,7 @@ func getGrafanaDashboard(namespace, redisName string, isCluster bool) (grafanav1
 		return dsb, err
 	}
 
-	return dsb, err
+	return dsb, nil
 }
 
 func getServiceMonitor(namespace, redisName string, isCluster bool, role string) (prometheusv1.ServiceMonitor, error) {
@@ -171,7 +230,7 @@ func getServiceMonitor(namespace, redisName string, isCluster bool, role string)
 		redisName += "-standalone"
 	}
 
-	data, err := generateK8sClient().RESTClient().Get().AbsPath("/apis/monitoring.coreos.com/v1/servicemonitors").Namespace(namespace).Name(redisName).DoRaw(context.TODO())
+	data, err := generateK8sClient().RESTClient().Get().AbsPath("/apis/monitoring.coreos.com/v1/namespaces/" + namespace + "/servicemonitors").Name(redisName).DoRaw(context.TODO())
 	if err != nil {
 		return sm, err
 	}
@@ -180,5 +239,5 @@ func getServiceMonitor(namespace, redisName string, isCluster bool, role string)
 		return sm, err
 	}
 
-	return sm, err
+	return sm, nil
 }

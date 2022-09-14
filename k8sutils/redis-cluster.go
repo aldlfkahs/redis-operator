@@ -169,12 +169,6 @@ func (service RedisClusterService) CreateRedisClusterService(cr *redisv1beta1.Re
 	labels := getRedisLabels(serviceName, "cluster", service.RedisServiceRole, cr.ObjectMeta.Labels)
 	annotations := generateServiceAnots(cr.ObjectMeta)
 	if cr.Spec.RedisExporter != nil && cr.Spec.RedisExporter.Enabled {
-		if err := createServiceMonitor(cr.Namespace, cr.Annotations["creator"], cr.Name, true); err != nil {
-			logger.Error(err, "Failed to create ServiceMonitor")
-		}
-		if err := createGrafanaDashBoard(cr.Namespace, cr.Annotations["creator"], cr.Name, true); err != nil {
-			logger.Error(err, "Failed to create GrafanaDashboard")
-		}
 		enableMetrics = true
 	}
 	objectMetaInfo := generateObjectMetaInformation(serviceName, cr.Namespace, labels, annotations)

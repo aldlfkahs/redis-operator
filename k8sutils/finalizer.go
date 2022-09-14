@@ -158,19 +158,21 @@ func finalizeGrafanaDahsboard(namespace, redisName string, isCluster bool) error
 		_, err := getGrafanaDashboard(namespace, redisName, true)
 		if err != nil && !errors.IsNotFound(err) {
 			return err
-		}
-		if _, err := generateK8sClient().RESTClient().Delete().AbsPath("/apis/monitoring.coreos.com/v1/servicemonitors").Namespace(namespace).Name(redisName + "-cluster").DoRaw(context.TODO()); err != nil {
-			logger.Error(err, "Failed to delete GrafanaDahsboard")
-			return err
+		} else if err == nil {
+			if _, err := generateK8sClient().RESTClient().Delete().AbsPath("/apis/integreatly.org/v1alpha1/namespaces/" + namespace + "/grafanadashboards").Name(redisName + "-cluster").DoRaw(context.TODO()); err != nil {
+				logger.Error(err, "Failed to delete GrafanaDahsboard")
+				return err
+			}
 		}
 	} else {
 		_, err := getGrafanaDashboard(namespace, redisName, false)
 		if err != nil && !errors.IsNotFound(err) {
 			return err
-		}
-		if _, err := generateK8sClient().RESTClient().Delete().AbsPath("/apis/monitoring.coreos.com/v1/servicemonitors").Namespace(namespace).Name(redisName + "-standalone").DoRaw(context.TODO()); err != nil {
-			logger.Error(err, "Failed to delete GrafanaDahsboard")
-			return err
+		} else if err == nil {
+			if _, err := generateK8sClient().RESTClient().Delete().AbsPath("/apis/integreatly.org/v1alpha1/namespaces/" + namespace + "/grafanadashboards").Name(redisName + "-standalone").DoRaw(context.TODO()); err != nil {
+				logger.Error(err, "Failed to delete GrafanaDahsboard")
+				return err
+			}
 		}
 	}
 
@@ -186,29 +188,31 @@ func finalizeServiceMonitor(namespace, redisName string, isCluster bool) error {
 		_, err := getServiceMonitor(namespace, redisName, true, "leader")
 		if err != nil && !errors.IsNotFound(err) {
 			return err
-		}
-		if _, err := generateK8sClient().RESTClient().Delete().AbsPath("/apis/monitoring.coreos.com/v1/servicemonitors").Namespace(namespace).Name(redisName + "-leader").DoRaw(context.TODO()); err != nil {
-			logger.Error(err, "Failed to delete ServiceMonitor")
-			return err
+		} else if err == nil {
+			if _, err := generateK8sClient().RESTClient().Delete().AbsPath("/apis/monitoring.coreos.com/v1/namespaces/" + namespace + "/servicemonitors").Name(redisName + "-leader").DoRaw(context.TODO()); err != nil {
+				logger.Error(err, "Failed to delete ServiceMonitor")
+				return err
+			}
 		}
 
 		_, err = getServiceMonitor(namespace, redisName, true, "follower")
 		if err != nil && !errors.IsNotFound(err) {
 			return err
-		}
-		if _, err := generateK8sClient().RESTClient().Delete().AbsPath("/apis/monitoring.coreos.com/v1/servicemonitors").Namespace(namespace).Name(redisName + "-follower").DoRaw(context.TODO()); err != nil {
-			logger.Error(err, "Failed to delete ServiceMonitor")
-			return err
+		} else if err == nil {
+			if _, err := generateK8sClient().RESTClient().Delete().AbsPath("/apis/monitoring.coreos.com/v1/namespaces/" + namespace + "/servicemonitors").Name(redisName + "-follower").DoRaw(context.TODO()); err != nil {
+				logger.Error(err, "Failed to delete ServiceMonitor")
+				return err
+			}
 		}
 	} else {
 		_, err := getServiceMonitor(namespace, redisName, false, "")
 		if err != nil && !errors.IsNotFound(err) {
 			return err
-		}
-
-		if _, err := generateK8sClient().RESTClient().Delete().AbsPath("/apis/monitoring.coreos.com/v1/servicemonitors").Namespace(namespace).Name(redisName).DoRaw(context.TODO()); err != nil {
-			logger.Error(err, "Failed to delete ServiceMonitor")
-			return err
+		} else if err == nil {
+			if _, err := generateK8sClient().RESTClient().Delete().AbsPath("/apis/monitoring.coreos.com/v1/namespaces/" + namespace + "/servicemonitors").Name(redisName + "-standalone").DoRaw(context.TODO()); err != nil {
+				logger.Error(err, "Failed to delete ServiceMonitor")
+				return err
+			}
 		}
 	}
 
