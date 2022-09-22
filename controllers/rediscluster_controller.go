@@ -97,6 +97,15 @@ func (r *RedisClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		return ctrl.Result{}, err
 	}
 
+	if instance.Spec.RedisExporter != nil && instance.Spec.RedisExporter.Enabled {
+		if err := k8sutils.CreateServiceMonitor(instance.Namespace, instance.Annotations["creator"], instance.Name, true); err != nil {
+			reqLogger.Error(err, "Failed to create ServiceMonitor")
+		}
+		if err := k8sutils.CreateGrafanaDashBoard(instance.Namespace, instance.Annotations["creator"], instance.Name, true); err != nil {
+			reqLogger.Error(err, "Failed to create GrafanaDashboard")
+		}
+	}
+
 	redisLeaderInfo, err := k8sutils.GetStatefulSet(instance.Namespace, instance.ObjectMeta.Name+"-leader")
 	if err != nil {
 		return ctrl.Result{}, err

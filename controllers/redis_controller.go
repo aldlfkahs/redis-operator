@@ -69,6 +69,15 @@ func (r *RedisReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 		return ctrl.Result{}, err
 	}
 
+	if instance.Spec.RedisExporter != nil && instance.Spec.RedisExporter.Enabled {
+		if err := k8sutils.CreateServiceMonitor(instance.Namespace, instance.Annotations["creator"], instance.Name, false); err != nil {
+			reqLogger.Error(err, "Failed to create ServiceMonitor")
+		}
+		if err := k8sutils.CreateGrafanaDashBoard(instance.Namespace, instance.Annotations["creator"], instance.Name, false); err != nil {
+			reqLogger.Error(err, "Failed to create GrafanaDashboard")
+		}
+	}
+
 	reqLogger.Info("Will reconcile redis operator in again 10 seconds")
 	return ctrl.Result{RequeueAfter: time.Second * 10}, nil
 }

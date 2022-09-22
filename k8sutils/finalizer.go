@@ -34,6 +34,12 @@ func HandleRedisFinalizer(cr *redisv1beta1.Redis, cl client.Client) error {
 			if err := finalizeRedisPVC(cr); err != nil {
 				return err
 			}
+			if err := finalizeGrafanaDahsboard(cr.Namespace, cr.Name, false); err != nil {
+				return err
+			}
+			if err := finalizeServiceMonitor(cr.Namespace, cr.Name, false); err != nil {
+				return err
+			}
 			controllerutil.RemoveFinalizer(cr, RedisFinalizer)
 			if err := cl.Update(context.TODO(), cr); err != nil {
 				logger.Error(err, "Could not remove finalizer "+RedisFinalizer)
@@ -53,6 +59,12 @@ func HandleRedisClusterFinalizer(cr *redisv1beta1.RedisCluster, cl client.Client
 				return err
 			}
 			if err := finalizeRedisClusterPVC(cr); err != nil {
+				return err
+			}
+			if err := finalizeGrafanaDahsboard(cr.Namespace, cr.Name, true); err != nil {
+				return err
+			}
+			if err := finalizeServiceMonitor(cr.Namespace, cr.Name, true); err != nil {
 				return err
 			}
 			controllerutil.RemoveFinalizer(cr, RedisClusterFinalizer)
@@ -136,5 +148,75 @@ func finalizeRedisClusterPVC(cr *redisv1beta1.RedisCluster) error {
 			}
 		}
 	}
+	return nil
+}
+
+// finalizeGrafanaDahsboard delete GrafanaDashboard
+func finalizeGrafanaDahsboard(namespace, redisName string, isCluster bool) error {
+	logger := finalizerLogger(namespace, redisName)
+	if isCluster {
+		_, err := getGrafanaDashboard(namespace, redisName, true)
+		if err != nil && !errors.IsNotFound(err) {
+			return err
+		} else if err == nil {
+			if _, err := generateK8sClient().RESTClient().Delete().AbsPath("/apis/integreatly.org/v1alpha1/namespaces/" + namespace + "/grafanadashboards").Name(redisName + "-cluster").DoRaw(context.TODO()); err != nil {
+				logger.Error(err, "Failed to delete GrafanaDahsboard")
+				return err
+			}
+		}
+	} else {
+		_, err := getGrafanaDashboard(namespace, redisName, false)
+		if err != nil && !errors.IsNotFound(err) {
+			return err
+		} else if err == nil {
+			if _, err := generateK8sClient().RESTClient().Delete().AbsPath("/apis/integreatly.org/v1alpha1/namespaces/" + namespace + "/grafanadashboards").Name(redisName + "-standalone").DoRaw(context.TODO()); err != nil {
+				logger.Error(err, "Failed to delete GrafanaDahsboard")
+				return err
+			}
+		}
+	}
+
+	logger.Info("Delete GrafanaDashboard Success")
+
+	return nil
+}
+
+// finalizeServiceMonitor delete ServiceMonitor
+func finalizeServiceMonitor(namespace, redisName string, isCluster bool) error {
+	logger := finalizerLogger(namespace, redisName)
+	if isCluster {
+		_, err := getServiceMonitor(namespace, redisName, true, "leader")
+		if err != nil && !errors.IsNotFound(err) {
+			return err
+		} else if err == nil {
+			if _, err := generateK8sClient().RESTClient().Delete().AbsPath("/apis/monitoring.coreos.com/v1/namespaces/" + namespace + "/servicemonitors").Name(redisName + "-leader").DoRaw(context.TODO()); err != nil {
+				logger.Error(err, "Failed to delete ServiceMonitor")
+				return err
+			}
+		}
+
+		_, err = getServiceMonitor(namespace, redisName, true, "follower")
+		if err != nil && !errors.IsNotFound(err) {
+			return err
+		} else if err == nil {
+			if _, err := generateK8sClient().RESTClient().Delete().AbsPath("/apis/monitoring.coreos.com/v1/namespaces/" + namespace + "/servicemonitors").Name(redisName + "-follower").DoRaw(context.TODO()); err != nil {
+				logger.Error(err, "Failed to delete ServiceMonitor")
+				return err
+			}
+		}
+	} else {
+		_, err := getServiceMonitor(namespace, redisName, false, "")
+		if err != nil && !errors.IsNotFound(err) {
+			return err
+		} else if err == nil {
+			if _, err := generateK8sClient().RESTClient().Delete().AbsPath("/apis/monitoring.coreos.com/v1/namespaces/" + namespace + "/servicemonitors").Name(redisName + "-standalone").DoRaw(context.TODO()); err != nil {
+				logger.Error(err, "Failed to delete ServiceMonitor")
+				return err
+			}
+		}
+	}
+
+	logger.Info("Delete ServiceMonitor Success")
+
 	return nil
 }
