@@ -130,7 +130,7 @@ func generateGrafanaDashboard(namespace, userName, redisName string, isCluster b
 			Namespace: namespace,
 			Name:      name,
 			Labels: map[string]string{
-				"app": name,
+				"app": GRAFANA_APP_NAME,
 			},
 			Annotations: map[string]string{
 				"creator": userName,
@@ -139,9 +139,10 @@ func generateGrafanaDashboard(namespace, userName, redisName string, isCluster b
 			},
 		},
 		Spec: grafanav1alpha1.GrafanaDashboardSpec{
-			GrafanaCom: &grafanav1alpha1.GrafanaDashboardGrafanaComSource{
-				Id: 12776, // https://grafana.com/grafana/dashboards/12776-redis/
-			},
+			// GrafanaCom: &grafanav1alpha1.GrafanaDashboardGrafanaComSource{
+			// 	Id: 12776, // https://grafana.com/grafana/dashboards/12776-redis/
+			// },
+			Json: generateGrafanaDashboardJson(redisName, isCluster, namespace),
 		},
 	}
 
